@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# Prompt the user for a link
+echo "Please enter the link to scan (e.g., example.com):"
+read link
+
+# Validate input (simple regex for domain names)
+if [[ ! "$link" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+    echo "Invalid domain name format. Please try again."
+    exit 1
+fi
+
+# Output the entered link
+echo "You entered: $link"
+
+# Query Certificate Transparency logs and process the output
+response=$(curl -s "https://crt.sh/?q=%25.$link&output=json")
+
+# Check if curl was successful
+if [ $? -ne 0 ]; then
+    echo "Failed to fetch data from crt.sh."
+    exit 1
+fi
+
+# Process and display results, extracting unique subdomains
+subdomains=$(echo "$response" | jq -r '.[].name_value' | sed 's/\*\.//g' | sort -u)
+
+# Check if any subdomains were found
+if [ -z "$subdomains" ]; then
+    echo "No subdomains found for $link."
+    exit 1
+fi
+
+# Save the found subdomains to a file
+echo "$subdomains" > subdomains.txt
+echo "Subdomains saved to subdomains.txt."
+
+# Filter live subdomains using httpx
+echo "Checking live subdomains..."
+httpx -silent -follow-redirects -mc 200 -o live_subdomains.txt < subdomains.txt
+
+# Check if any live subdomains were found
+if [ -s live_subdomains.txt ]; then
+    echo "Live subdomains saved to live_subdomains.txt."
+else
+    echo "No live subdomains found."
+fi
